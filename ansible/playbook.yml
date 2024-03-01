@@ -1,0 +1,139 @@
+---
+- name: 'Podman'
+  hosts: all
+  remote_user: alvmorapa
+  become: true
+  tasks:
+    - name: Ensure Podman
+      ansible.builtin.apt:
+        name: podman
+        state: latest
+        update_cache: yes
+    - name: Podman authentication
+      command: bash -c "source /tmp/acr && podman login -u $ACR_USERNAME -p $ACR_PASSWORD $ACR_NAME"
+      run_once: true
+    - name: 'Ensure Hostname'
+      ansible.builtin.hostname:
+        name: containerserver
+    - name: Limit SSH
+      ufw:
+        rule: limit
+        port: 21
+        log: yes
+    - name: Disable UFW
+      ufw:
+        state: disabled
+        policy: allow
+    - name: Create a directory if it does not exist
+      tags:
+        - certs
+      ansible.builtin.file:
+        path: /opt/web
+        state: directory
+        mode: '0755'
+    - name: Create private key with password protection
+      tags:
+        - certs
+      community.crypto.openssl_privatekey:
+        path: /opt/web/ca.key
+        passphrase: "unir"
+        cipher: auto
+    - name: Create certificate signing request (CSR) for CA certificate
+      tags:
+        - certs
+      community.crypto.openssl_csr_pipe:
+        privatekey_path: /opt/web/ca.key
+        privatekey_passphrase: "unir"
+        common_name: Alvmorapa CA
+        use_common_name_for_san: false  # since we do not specify SANs, don't use CN as a SAN
+        basic_constraints:
+          - 'CA:TRUE'
+        basic_constraints_critical: true
+        key_usage:
+          - keyCertSign
+        key_usage_critical: true
+      register: ca_csr
+    
+    - name: Create self-signed CA certificate from CSR
+      tags:
+        - certs
+      community.crypto.x509_certificate:
+        path: /opt/web/ca.pem
+        csr_content: "{{ ca_csr.csr }}"
+        privatekey_path: /opt/web/ca.key
+        privatekey_passphrase: "unir"
+        provider: selfsigned
+
+    - name: Create private key for new certificate on server_1
+      tags:
+        - certs
+      community.crypto.openssl_privatekey:
+        path: /opt/web/web.key
+        passphrase: "unir"
+        cipher: auto
+        mode: 0444
+      run_once: true
+    - name: Create certificate signing request (CSR) for new certificate
+      tags:
+        - certs
+      community.crypto.openssl_csr_pipe:
+        privatekey_path: /opt/web/web.key
+        privatekey_passphrase: "unir"
+        subject_alt_name:
+          - "DNS:localhost"
+          - "DNS:webserver.local"
+          - "DNS:alvmorapa.francecentral.cloudapp.azure.com"
+      run_once: true
+      register: csr
+    - name: Sign certificate with our CA
+      tags:
+        - certs
+      community.crypto.x509_certificate_pipe:
+        csr_content: "{{ csr.csr }}"
+        provider: ownca
+        ownca_path: /opt/web/ca.pem
+        ownca_privatekey_path: /opt/web/ca.key
+        ownca_privatekey_passphrase: "unir"
+        ownca_not_after: +365d  # valid for one year
+        ownca_not_before: "-1d"  # valid since yesterday
+      run_once: true
+      register: certificate
+    - name: Create web.pem file
+      tags:
+        - certs
+      copy:
+        content: "{{ certificate.certificate }}"
+        dest: /opt/web/web.pem
+      vars:
+        certificate_result: "{{ certificate_result.results}}"
+    - name: Create webapp container
+      tags:
+        - ctr
+      containers.podman.podman_container:
+        name: webapp
+        image: unirregistry.azurecr.io/webserver:3
+        rm: true
+        state: created
+        volumes:
+        - "/opt/web/:/opt/web/keys/"
+        ports:
+          - 80:8080
+          - 443:8443
+
+    - name: Generate systemd unit file for webapp container
+      tags:
+        - ctr
+      containers.podman.podman_generate_systemd:
+        name: webapp
+        new: true
+        no_header: true
+        dest: /etc/systemd/system
+
+    - name: Ensure postgres container is started and enabled
+      tags:
+        - ctr
+      ansible.builtin.systemd:
+        name: container-webapp
+        daemon_reload: true
+        state: started
+        enabled: true
