@@ -113,7 +113,7 @@
         - ctr
       containers.podman.podman_container:
         name: webapp
-        image: unirregistry.azurecr.io/webserver:3
+        image: unirregistry.azurecr.io/webserver:casopractico2
         rm: true
         state: created
         volumes:

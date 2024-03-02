@@ -19,7 +19,7 @@ spec:
     spec:
       containers:
       - name: todo
-        image: unirregistry.azurecr.io/todoapp:2
+        image: unirregistry.azurecr.io/todoapp:casopractico2
         env:
           - name: MYSQL_ROOT_PASSWORD
             value: unirpassword
