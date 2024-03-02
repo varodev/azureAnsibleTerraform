@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: webapp
+  labels:
+    app: webapp
+spec:
+  selector:
+    matchLabels:
+      app: webapp
+  replicas: 1
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      name: webapp
+      labels:
+        app: webapp
+    spec:
+      containers:
+      - name: todo
+        image: unirregistry.azurecr.io/todoapp:2
+        env:
+          - name: MYSQL_ROOT_PASSWORD
+            value: unirpassword
+          - name: MYSQL_DATABASE
+            value: webapp
+          - name: MYSQL_HOST
+            value: db

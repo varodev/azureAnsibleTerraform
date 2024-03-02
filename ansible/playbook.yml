@@ -24,6 +24,7 @@
       ufw:
         state: disabled
         policy: allow
+    # Creación de certificados X.509
     - name: Create a directory if it does not exist
       tags:
         - certs
@@ -106,6 +107,7 @@
         dest: /opt/web/web.pem
       vars:
         certificate_result: "{{ certificate_result.results}}"
+    # Despliegue de container con bindado de volumenes con certs y puertos
     - name: Create webapp container
       tags:
         - ctr
@@ -120,6 +122,7 @@
           - 80:8080
           - 443:8443
 
+    # Generación de unidad SystemD del sistema
     - name: Generate systemd unit file for webapp container
       tags:
         - ctr
